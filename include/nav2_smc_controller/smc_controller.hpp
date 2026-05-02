@@ -45,21 +45,8 @@ public:
   void setPlan(const nav_msgs::msg::Path & path) override;
   void setSpeedLimit(const double & speed_limit, const bool & percentage) override;
 
-protected:
-  // ── Control branches ─────────────────────────────────────────────────
-  geometry_msgs::msg::TwistStamped computeDiff(
-    const geometry_msgs::msg::PoseStamped & robot_pose);
-
-  geometry_msgs::msg::TwistStamped computeOmni(
-    const geometry_msgs::msg::PoseStamped & robot_pose);
-
-  // ── Helpers ──────────────────────────────────────────────────────────
-  geometry_msgs::msg::PoseStamped getNextPose(
-    const geometry_msgs::msg::PoseStamped & robot_pose);
-
-  bool transformPlan(const std::string & frame);
-
-  /// Boundary-layer saturation — suppresses chattering near s = 0
+  // ── Utility functions (made public for testing) ──────────────────────
+  /// Boundary-layer saturation – suppresses chattering near s = 0
   static double sat(double s, double phi)
   {
     if (phi < 1e-9) { return (s >= 0.0) ? 1.0 : -1.0; }
@@ -73,6 +60,20 @@ protected:
     while (a < -M_PI) { a += 2.0 * M_PI; }
     return a;
   }
+
+protected:
+  // ── Control branches ─────────────────────────────────────────────────
+  geometry_msgs::msg::TwistStamped computeDiff(
+    const geometry_msgs::msg::PoseStamped & robot_pose);
+
+  geometry_msgs::msg::TwistStamped computeOmni(
+    const geometry_msgs::msg::PoseStamped & robot_pose);
+
+  // ── Helpers ──────────────────────────────────────────────────────────
+  geometry_msgs::msg::PoseStamped getNextPose(
+    const geometry_msgs::msg::PoseStamped & robot_pose);
+
+  bool transformPlan(const std::string & frame);
 
   // ── ROS handles ──────────────────────────────────────────────────────
   rclcpp_lifecycle::LifecycleNode::WeakPtr node_;

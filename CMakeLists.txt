@@ -34,6 +34,15 @@ target_include_directories(${PROJECT_NAME} PUBLIC
 ament_target_dependencies(${PROJECT_NAME} ${DEPS})
 pluginlib_export_plugin_description_file(nav2_core plugins.xml)
 
+# ── Unit tests ──────────────────────────────────────────────────────────
+if(BUILD_TESTING)
+  find_package(ament_cmake_gtest REQUIRED)
+  ament_add_gtest(test_smc test/test_smc.cpp)
+  target_include_directories(test_smc PRIVATE include)
+  target_link_libraries(test_smc ${PROJECT_NAME})
+  ament_target_dependencies(test_smc ${DEPS})
+endif()
+
 install(TARGETS ${PROJECT_NAME}
   ARCHIVE DESTINATION lib
   LIBRARY DESTINATION lib
@@ -42,5 +51,8 @@ install(TARGETS ${PROJECT_NAME}
 install(DIRECTORY include/ DESTINATION include/)
 install(FILES plugins.xml  DESTINATION share/${PROJECT_NAME})
 install(DIRECTORY config/  DESTINATION share/${PROJECT_NAME}/config)
+
+ament_export_include_directories(include)
+ament_export_dependencies(${DEPS})
 
 ament_package()
