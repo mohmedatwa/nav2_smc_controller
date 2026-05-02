@@ -1,0 +1,11 @@
+<library path="nav2_smc_controller">
+  <class name="nav2_smc_controller/SMCController"
+         type="nav2_smc_controller::SMCController"
+         base_class_type="nav2_core::Controller">
+    <description>
+      Sliding Mode Controller for Nav2. Robust path tracking via a boundary-layer
+      SMC law on lateral and longitudinal errors. All gains are configurable from
+      nav2_params.yaml under the controller plugin namespace.
+    </description>
+  </class>
+</library>
