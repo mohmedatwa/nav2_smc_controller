@@ -4,6 +4,7 @@
 #include <string>
 #include <memory>
 #include <limits>
+#include <cmath>
 
 #include "rclcpp/rclcpp.hpp"
 #include "rclcpp_lifecycle/lifecycle_node.hpp"
@@ -45,12 +46,14 @@ public:
   void setPlan(const nav_msgs::msg::Path & path) override;
   void setSpeedLimit(const double & speed_limit, const bool & percentage) override;
 
-  // ── Utility functions (made public for testing) ──────────────────────
-  /// Boundary-layer saturation – suppresses chattering near s = 0
+  // ── Utility functions (public for testing) ───────────────────────────
+
+  /// Boundary-layer saturation – suppresses chattering near s = 0.
+  /// Uses std::abs(phi) so negative phi values are handled correctly.
   static double sat(double s, double phi)
   {
-    if (phi < 1e-9) { return (s >= 0.0) ? 1.0 : -1.0; }
-    return std::clamp(s / phi, -1.0, 1.0);
+    if (std::abs(phi) < 1e-9) { return (s >= 0.0) ? 1.0 : -1.0; }
+    return std::clamp(s / std::abs(phi), -1.0, 1.0);
   }
 
   /// Wrap angle to [-pi, pi]
@@ -95,12 +98,12 @@ protected:
   std::string base_frame_id_ {"base_link"};
 
   // ── Shared SMC parameters ────────────────────────────────────────────
-  double lambda_          {1.0};   
+  double lambda_          {1.0};
   double k_linear_        {0.5};
   double k_angular_       {1.0};
   double eta_linear_      {0.2};
   double eta_angular_     {0.5};
-  double boundary_layer_  {0.1};   
+  double boundary_layer_  {0.1};
   double max_linear_velocity_  {0.3};
   double max_angular_velocity_ {1.0};
   double step_size_       {0.2};
@@ -117,9 +120,13 @@ protected:
 
   // ── Controller state ─────────────────────────────────────────────────
   rclcpp::Time last_cycle_time_;
-  double prev_e_y_  {0.0};   
-  double prev_e_x_  {0.0};
-  bool   is_new_plan_ {true}; ///< Prevents derivative kick on first cycle
+  double prev_e_y_      {0.0};  ///< Previous lateral error (for e_y_dot in diff mode)
+  bool   is_new_plan_   {true}; ///< Prevents derivative kick on first cycle after setPlan()
+
+  /// Index of the closest path point found on the previous cycle.
+  /// Constrains getNextPose() to search forward-only, preventing regression
+  /// to behind-robot poses.
+  size_t last_closest_idx_ {0};
 
   nav_msgs::msg::Path global_plan_;
 };

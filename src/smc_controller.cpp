@@ -56,7 +56,7 @@ void SMCController::configure(
     rclcpp::ParameterValue(std::string("base_link")));
   node->get_parameter(plugin_name_ + ".base_frame_id", base_frame_id_);
 
-  // ── Helper: declare + get one double parameter ─────────────────────────
+  // ── Helper: declare + get one double parameter ────────────────────────
   auto param = [&](const std::string & p, double def) -> double {
     nav2_util::declare_parameter_if_not_declared(
       node, plugin_name_ + "." + p, rclcpp::ParameterValue(def));
@@ -94,9 +94,11 @@ void SMCController::configure(
     "smc/sliding_surfaces", 1);
 
   RCLCPP_INFO(logger_,
-    "SMCController configured [%s]: frame=%s lambda=%.2f k_lin=%.2f k_ang=%.2f v_max=%.2f w_max=%.2f step=%.2f",
+    "SMCController configured [%s]: frame=%s lambda=%.2f k_lin=%.2f k_ang=%.2f "
+    "v_max=%.2f w_max=%.2f step=%.2f",
     robot_type_str.c_str(), base_frame_id_.c_str(),
-    lambda_, k_linear_, k_angular_, max_linear_velocity_, max_angular_velocity_, step_size_);
+    lambda_, k_linear_, k_angular_,
+    max_linear_velocity_, max_angular_velocity_, step_size_);
 }
 
 void SMCController::cleanup()
@@ -111,10 +113,10 @@ void SMCController::activate()
   RCLCPP_INFO(logger_, "Activating SMCController");
   next_pose_pub_->on_activate();
   sliding_surface_pub_->on_activate();
-  last_cycle_time_ = clock_->now();
-  prev_e_y_ = 0.0;
-  prev_e_x_ = 0.0;
-  is_new_plan_ = true;
+  last_cycle_time_  = clock_->now();
+  prev_e_y_         = 0.0;
+  last_closest_idx_ = 0;
+  is_new_plan_      = true;
 }
 
 void SMCController::deactivate()
@@ -169,7 +171,6 @@ geometry_msgs::msg::TwistStamped SMCController::computeDiff(
   // Prevent derivative kick on new plans
   if (is_new_plan_) {
     prev_e_y_ = e_y;
-    prev_e_x_ = e_x;
     is_new_plan_ = false;
   }
 
@@ -180,14 +181,14 @@ geometry_msgs::msg::TwistStamped SMCController::computeDiff(
   const double s_v     = e_x;
   const double s_w     = e_y_dot + lambda_ * e_y;
 
-  // u = +eta * s  +  k * sat(s / phi) [Corrected signs for tracking]
+  // u = eta * s + k * sat(s / phi)
   cmd.twist.linear.x  = std::clamp(
     eta_linear_  * s_v + k_linear_  * sat(s_v, boundary_layer_),
     -max_linear_velocity_,  max_linear_velocity_);
   cmd.twist.angular.z = std::clamp(
     eta_angular_ * s_w + k_angular_ * sat(s_w, boundary_layer_),
     -max_angular_velocity_, max_angular_velocity_);
-  cmd.twist.linear.y  = 0.0;   
+  cmd.twist.linear.y  = 0.0;
 
   std_msgs::msg::Float64MultiArray surf;
   surf.data = {s_v, s_w};
@@ -195,7 +196,6 @@ geometry_msgs::msg::TwistStamped SMCController::computeDiff(
 
   last_cycle_time_ = clock_->now();
   prev_e_y_ = e_y;
-  prev_e_x_ = e_x;
 
   return cmd;
 }
@@ -221,7 +221,6 @@ geometry_msgs::msg::TwistStamped SMCController::computeOmni(
 
   if (is_new_plan_) {
     prev_e_y_ = e_y;
-    prev_e_x_ = e_x;
     is_new_plan_ = false;
   }
 
@@ -229,7 +228,7 @@ geometry_msgs::msg::TwistStamped SMCController::computeOmni(
   const double s_lat = e_y;
   const double s_w   = e_th;
 
-  // u = +eta * s  +  k * sat(s / phi) [Corrected signs for tracking]
+  // u = eta * s + k * sat(s / phi)
   cmd.twist.linear.x  = std::clamp(
     eta_linear_   * s_v   + k_linear_   * sat(s_v,   boundary_layer_),
     -max_linear_velocity_,   max_linear_velocity_);
@@ -248,28 +247,28 @@ geometry_msgs::msg::TwistStamped SMCController::computeOmni(
 
   last_cycle_time_ = clock_->now();
   prev_e_y_ = e_y;
-  prev_e_x_ = e_x;
 
   return cmd;
 }
 
 void SMCController::setPlan(const nav_msgs::msg::Path & path)
 {
-  global_plan_     = path;
-  prev_e_y_        = 0.0;
-  prev_e_x_        = 0.0;
-  is_new_plan_     = true; // Arm the flag to prevent derivative kick
-  last_cycle_time_ = clock_->now();
+  global_plan_      = path;
+  prev_e_y_         = 0.0;
+  last_closest_idx_ = 0;
+  is_new_plan_      = true;
+  last_cycle_time_  = clock_->now();
 }
 
 void SMCController::setSpeedLimit(const double & speed_limit, const bool & percentage)
 {
-  const double factor = percentage ? (speed_limit / 100.0)
-                                   : (base_max_linear_velocity_ > 1e-9
-                                        ? speed_limit / base_max_linear_velocity_
-                                        : 1.0);
+  const double factor = percentage
+    ? (speed_limit / 100.0)
+    : (base_max_linear_velocity_ > 1e-9
+        ? speed_limit / base_max_linear_velocity_
+        : 1.0);
 
-  max_linear_velocity_  = percentage ? base_max_linear_velocity_  * factor : speed_limit;
+  max_linear_velocity_  = percentage ? base_max_linear_velocity_ * factor : speed_limit;
   max_angular_velocity_ = base_max_angular_velocity_ * factor;
 
   if (robot_type_ == RobotType::OMNI) {
@@ -280,16 +279,29 @@ void SMCController::setSpeedLimit(const double & speed_limit, const bool & perce
 geometry_msgs::msg::PoseStamped SMCController::getNextPose(
   const geometry_msgs::msg::PoseStamped & robot_pose)
 {
-  size_t closest_idx = 0;
+  // ── Forward-only closest-point search ─────────────────────────────────
+  // Start from last_closest_idx_ to prevent regression to behind-robot poses.
+  // Early exit once distances start growing again to keep this O(1) amortised.
+  size_t closest_idx = last_closest_idx_;
   double min_dist    = std::numeric_limits<double>::max();
 
-  for (size_t i = 0; i < global_plan_.poses.size(); ++i) {
+  for (size_t i = last_closest_idx_; i < global_plan_.poses.size(); ++i) {
     const double dx = global_plan_.poses[i].pose.position.x - robot_pose.pose.position.x;
     const double dy = global_plan_.poses[i].pose.position.y - robot_pose.pose.position.y;
     const double d  = std::hypot(dx, dy);
-    if (d < min_dist) { min_dist = d; closest_idx = i; }
+
+    if (d < min_dist) {
+      min_dist    = d;
+      closest_idx = i;
+    } else if (d > min_dist + 0.3) {
+      // Distances are growing — no closer point further ahead
+      break;
+    }
   }
 
+  last_closest_idx_ = closest_idx;
+
+  // ── Walk forward from closest to find the lookahead point ─────────────
   for (size_t i = closest_idx; i < global_plan_.poses.size(); ++i) {
     const double dx = global_plan_.poses[i].pose.position.x - robot_pose.pose.position.x;
     const double dy = global_plan_.poses[i].pose.position.y - robot_pose.pose.position.y;
