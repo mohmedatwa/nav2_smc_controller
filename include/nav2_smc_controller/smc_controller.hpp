@@ -120,7 +120,15 @@ protected:
 
   // ── Controller state ─────────────────────────────────────────────────
   rclcpp::Time last_cycle_time_;
-  double prev_e_y_      {0.0};  ///< Previous lateral error (for e_y_dot in diff mode)
+  // Previous errors
+  double prev_e_x_{0.0};
+  double prev_e_y_{0.0};
+  double prev_e_th_{0.0};
+
+  // Omni sliding surface parameters
+  double lambda_x_{1.5};
+  double lambda_y_{1.5};
+  double lambda_th_{3.0};
   bool   is_new_plan_   {true}; ///< Prevents derivative kick on first cycle after setPlan()
 
   /// Index of the closest path point found on the previous cycle.
