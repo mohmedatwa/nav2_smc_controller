@@ -52,24 +52,27 @@ controller_server:
     # =========================================================================
     FollowPath:
       plugin: "nav2_smc_controller/SMCController"
-      robot_type: "omni"             # "diff" | "omni"
-      base_frame_id: "base_link"     # Robot's local frame
+      robot_type: "omni"
+      base_frame_id: "base_link"
 
-      lambda: 1.0
+      lambda_x: 1.5
+      lambda_y: 1.5
+      lambda_th: 1.5
 
-      k_linear:  0.5
-      eta_linear: 0.2
+      lambda: 1.0   # only for diff mode
 
-      k_lateral:  0.5
-      eta_lateral: 0.2
+      k_linear: 1.0
+      eta_linear: 0.3
 
-      k_angular:  1.0
-      eta_angular: 0.5
+      k_lateral: 1.0
+      eta_lateral: 0.3
 
-      boundary_layer: 0.1
+      k_angular: 0.8
+      eta_angular: 0.2
 
-      max_linear_velocity:  0.3     # m/s   (vx)
-      max_lateral_velocity: 0.3     # m/s   (vy, omni only)
-      max_angular_velocity: 1.0     # rad/s (wz)
+      boundary_layer: 0.15
 
+      max_linear_velocity: 0.5
+      max_lateral_velocity: 0.5
+      max_angular_velocity: 1.0
       step_size: 0.2
